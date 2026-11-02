@@ -121,7 +121,7 @@ ol.how{padding-left:22px;color:var(--mut);display:grid;gap:4px}
 
 <script>
 /* ===== ตั้งค่า ===== */
-const CFG={PROMPTPAY:'0812345678',PULSE_PER_BAHT:1,VERIFY_URL:'',MIN:10,MAX:500,QR_SEC:300,SVC:0xFFE0,CHR:0xFFE1};
+const CFG={PROMPTPAY:'0614953337',PULSE_PER_BAHT:1,VERIFY_URL:'',MIN:10,MAX:500,QR_SEC:300,SVC:0xFFE0,CHR:0xFFE1};
 const $=id=>document.getElementById(id);
 const q=new URLSearchParams(location.search);
 const MACHINE=(q.get('m')||'01').slice(0,16);$('mid').textContent=MACHINE;
@@ -192,8 +192,7 @@ $('demo').onclick=dispense;
 /* ส่งพัลส์ + แสดงความคืบหน้า */
 async function dispense(){
   if(busy)return;busy=true;show(3);$('vt').textContent='กำลังส่งยอดให้ตู้…';
-  try{if(!DEMO){if(!ch)throw 0;await ch.writeValueWithResponse(new TextEncoder().encode('P'+amount*CFG.PULSE_PER_BAHT+'
-'))}}
+  try{if(!DEMO){if(!ch)throw 0;await ch.writeValueWithResponse(new TextEncoder().encode('P'+amount*CFG.PULSE_PER_BAHT+'\n'))}}
   catch(_){toast('ส่งยอดถึงตู้ไม่สำเร็จ กรุณาแจ้งเจ้าหน้าที่ (ยอด '+amount+' บาท)');busy=false;show(0);return}
   $('dn').textContent=amount;show(4);
   setTimeout(()=>{if($('s4').classList.contains('on'))home()},20000);
