@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#0E2A47">
 <title>ตู้น้ำมันหยอดเหรียญ</title>
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;800&display=swap" rel="stylesheet">
@@ -58,6 +58,15 @@ ol.how{padding-left:22px;color:var(--mut);display:grid;gap:4px}
 .ok{width:96px;height:96px;border-radius:50%;background:var(--green);color:#fff;font-size:3.4rem;display:grid;place-items:center}
 #toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--red);color:#fff;padding:12px 18px;border-radius:14px;max-width:88vw;display:none;z-index:9}
 @media(prefers-reduced-motion:reduce){*{animation:none!important}}
+html,body{-webkit-user-select:none;user-select:none;overscroll-behavior:none;touch-action:manipulation}
+input{-webkit-user-select:text;user-select:text}
+#exit{position:fixed;top:calc(env(safe-area-inset-top) + 6px);right:8px;z-index:50;width:34px;height:34px;border-radius:50%;border:0;background:rgba(14,42,71,.28);color:#fff;font-size:15px}
+#pin,#free{position:fixed;inset:0;z-index:60;background:rgba(14,42,71,.82);display:flex;align-items:center;justify-content:center}
+#pin[hidden],#free[hidden]{display:none}
+.pbox{background:#fff;border-radius:24px;padding:22px;width:min(320px,90vw);text-align:center;display:grid;gap:12px}
+#dots{display:flex;justify-content:center;gap:10px}#dots i{width:14px;height:14px;border-radius:50%;border:2px solid var(--blue)}#dots i.f{background:var(--blue)}
+.kp{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.kp button{border:0;background:var(--bg);border-radius:14px;padding:14px 0;font:800 1.3rem 'Sarabun';color:var(--navy)}
+#perr{color:var(--red);min-height:1.2em;font-size:.9rem}
 </style>
 </head>
 <body>
@@ -72,7 +81,7 @@ ol.how{padding-left:22px;color:var(--mut);display:grid;gap:4px}
  <h1>ตู้น้ำมันหยอดเหรียญ</h1>
  <p>จ่ายผ่านพร้อมเพย์ เติมได้ทันที</p>
  <button class="btn amb" id="go">เติมน้ำมัน</button>
- <div class="chip" id="ble"><i></i><span>ตู้ <b id="mid">-</b> · ยังไม่เชื่อมต่อ</span></div>
+ <div class="chip" id="ble"><i></i><span>ตู้ <b id="mid">-</b> · กำลังตรวจสอบ…</span></div>
 </section>
 
 <!-- 1 เลือกยอด -->
@@ -113,15 +122,18 @@ ol.how{padding-left:22px;color:var(--mut);display:grid;gap:4px}
 
 <!-- 4 เสร็จ -->
 <section class="scr" id="s4">
- <div class="body center"><div class="ok">✓</div><h2>ชำระเงินสำเร็จ</h2><div class="big"><span id="dn"></span> บาท</div><p class="mut">ส่งยอดให้ตู้แล้ว ยกหัวจ่ายแล้วเติมน้ำมันได้เลย</p></div>
+ <div class="body center"><div class="ok">✓</div><h2 id="okt">ชำระเงินสำเร็จ</h2><div class="big"><span id="dn"></span> บาท</div><p class="mut" id="okm"></p><p class="mut" id="code"></p></div>
  <div class="foot"><button class="btn" id="fin">เสร็จสิ้น</button></div>
 </section>
 </div>
+<button id="exit" aria-label="ปิดแอป">✕</button>
+<div id="pin" hidden><div class="pbox"><b>ใส่รหัสเพื่อปิดแอป</b><div id="dots"></div><div id="perr"></div><div class="kp" id="kp"></div></div></div>
+<div id="free" hidden><div class="pbox"><b>ปลดล็อกแล้ว</b><p class="mut">ปิดแอปได้เลย (ปัดปิดจากหน้ารวมแอป หรือกดปุ่มโฮม)</p><button class="btn" id="relock">กลับเข้าโหมดตู้</button></div></div>
 <div id="toast"></div>
 
 <script>
 /* ===== ตั้งค่า ===== */
-const CFG={PROMPTPAY:'0614953337',PULSE_PER_BAHT:1,VERIFY_URL:'',MIN:10,MAX:500,QR_SEC:300,SVC:0xFFE0,CHR:0xFFE1};
+const CFG={PROMPTPAY:'0614953337',WORKER_URL:'',MIN:10,MAX:500,QR_SEC:300};
 const $=id=>document.getElementById(id);
 const q=new URLSearchParams(location.search);
 const MACHINE=(q.get('m')||'01').slice(0,16);$('mid').textContent=MACHINE;
@@ -135,21 +147,13 @@ function home(){amount=0;busy=false;$('inp').value='';sel();upd();show(0)}
 /* นาฬิกา */
 setInterval(()=>{const d=new Date();$('clk').textContent=d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});$('dt').textContent=d.toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'long'})},1000);
 
-/* BLE */
-async function connect(){
-  if(ch)return true;
-  try{
-    if(!navigator.bluetooth)throw new Error('เบราว์เซอร์นี้ไม่รองรับบลูทูธ (ต้องเป็น Chrome และเปิดผ่าน https)');
-    const d=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'PumpBox'},{services:[CFG.SVC]}],optionalServices:[CFG.SVC]});
-    const s=await(await d.gatt.connect()).getPrimaryService(CFG.SVC);
-    ch=await s.getCharacteristic(CFG.CHR);
-    $('ble').classList.add('ok');$('ble').querySelector('span').innerHTML='ตู้ <b>'+MACHINE+'</b> · เชื่อมต่อแล้ว';
-    d.addEventListener('gattserverdisconnected',()=>{ch=null;$('ble').classList.remove('ok');$('ble').querySelector('span').innerHTML='ตู้ <b>'+MACHINE+'</b> · หลุดการเชื่อมต่อ'});
-    return true;
-  }catch(e){console.error(e);toast('เชื่อมต่อตู้ไม่ได้: '+(e.name==='NotFoundError'?'ไม่พบบอร์ด หรือยกเลิกการเลือก':e.message));return false}
-}
+/* สถานะตู้ */
 const DEMO=q.get('demo')==='1';
-$('go').onclick=async()=>{if(DEMO||await connect())show(1)};
+const api=(p,o)=>fetch(CFG.WORKER_URL+p,o).then(r=>r.json());
+async function online(){if(DEMO)return true;try{return !!(await api('/online?m='+encodeURIComponent(MACHINE))).online}catch(_){return false}}
+function setChip(on){$('ble').classList.toggle('ok',on);$('ble').querySelector('span').innerHTML='ตู้ <b>'+MACHINE+'</b> · '+(on?'พร้อมใช้งาน':'ไม่พร้อมใช้งาน')}
+if(DEMO)setChip(true);else if(CFG.WORKER_URL){online().then(setChip);setInterval(()=>online().then(setChip),30000)}else setChip(false);
+$('go').onclick=async()=>{if(await online())show(1);else{setChip(false);toast('ตู้ยังไม่พร้อมใช้งาน กรุณาแจ้งเจ้าหน้าที่')}};
 
 /* เลือกยอด */
 for(let v=20;v<=100;v+=10){const b=document.createElement('button');b.className='amt';b.textContent=v;b.onclick=()=>{$('inp').value=v;sel();upd()};$('grid').appendChild(b)}
@@ -173,31 +177,67 @@ function ppay(id,a){const t=id.replace(/\D/g,'');const acc=t.length===13?tlv('02
 $('next').onclick=()=>{
   $('amt').textContent=amount;$('qr').innerHTML='';
   new QRCode($('qr'),{text:ppay(CFG.PROMPTPAY,amount),width:230,height:230});
-  $('demo').hidden=!!CFG.VERIFY_URL;show(2);
+  $('demo').hidden=!DEMO;show(2);
   let t=CFG.QR_SEC;clearInterval(cdT);cdT=setInterval(()=>{t--;$('cd').textContent=String(t/60|0).padStart(2,'0')+':'+String(t%60).padStart(2,'0');if(t<=0){clearInterval(cdT);toast('QR หมดอายุ');show(1)}},1000);
 };
 
-/* ตรวจสลิป */
-$('paid').onclick=()=>CFG.VERIFY_URL?$('slip').click():toast('ยังไม่ได้ตั้ง VERIFY_URL');
+/* ส่งสลิป + รอตู้ตอบกลับ */
+$('paid').onclick=()=>CFG.WORKER_URL?$('slip').click():toast('ยังไม่ได้ตั้ง WORKER_URL');
 $('slip').onchange=async e=>{
-  const f=e.target.files[0];e.target.value='';if(!f)return;
-  show(3);$('vt').textContent='กำลังตรวจสอบสลิป…';
+  const f=e.target.files[0];e.target.value='';if(!f||busy)return;
+  busy=true;show(3);$('vt').textContent='กำลังตรวจสอบสลิป…';
   try{const fd=new FormData();fd.append('slip',f);fd.append('amount',amount);fd.append('machine',MACHINE);
-    const r=await(await fetch(CFG.VERIFY_URL,{method:'POST',body:fd})).json();
-    if(r.ok&&Number(r.amount)>=amount)dispense();else{toast('ยอดไม่ตรงหรือสลิปถูกใช้แล้ว');show(2)}
-  }catch(_){toast('ตรวจสอบไม่สำเร็จ ลองใหม่');show(2)}
+    const r=await api('/pay?m='+encodeURIComponent(MACHINE),{method:'POST',body:fd});
+    if(!r.ok){busy=false;toast(r.msg||'ตรวจสลิปไม่ผ่าน');show(2);return}
+    $('vt').textContent='ชำระเงินสำเร็จ กำลังส่งยอดให้ตู้…';
+    let st='pending';
+    for(let i=0;i<30&&st!=='done';i++){await new Promise(r=>setTimeout(r,1500));try{st=(await api('/status?m='+encodeURIComponent(MACHINE)+'&id='+r.id)).state}catch(_){}}
+    finish(st,r.id);
+  }catch(_){busy=false;toast('ตรวจสอบไม่สำเร็จ ลองใหม่');show(2)}
 };
-$('demo').onclick=dispense;
-
-/* ส่งพัลส์ + แสดงความคืบหน้า */
-async function dispense(){
-  if(busy)return;busy=true;show(3);$('vt').textContent='กำลังส่งยอดให้ตู้…';
-  try{if(!DEMO){if(!ch)throw 0;await ch.writeValueWithResponse(new TextEncoder().encode('P'+amount*CFG.PULSE_PER_BAHT+'\n'))}}
-  catch(_){toast('ส่งยอดถึงตู้ไม่สำเร็จ กรุณาแจ้งเจ้าหน้าที่ (ยอด '+amount+' บาท)');busy=false;show(0);return}
-  $('dn').textContent=amount;show(4);
-  setTimeout(()=>{if($('s4').classList.contains('on'))home()},20000);
+function finish(st,id){
+  const ok=st==='done';$('dn').textContent=amount;$('code').textContent='รหัสรายการ '+id;
+  $('okt').textContent=ok?'ชำระเงินสำเร็จ':'รับยอดแล้ว แต่ตู้ยังไม่ตอบกลับ';
+  $('okm').textContent=ok?'ส่งยอดให้ตู้แล้ว ยกหัวจ่ายแล้วเติมน้ำมันได้เลย':'ถ้ายังไม่มียอดที่ตู้ แจ้งเจ้าหน้าที่พร้อมรหัสรายการนี้ ห้ามจ่ายซ้ำ';
+  show(4);setTimeout(()=>{if($('s4').classList.contains('on'))home()},ok?20000:120000);
 }
+$('demo').onclick=async()=>{if(busy)return;busy=true;show(3);$('vt').textContent='กำลังส่งยอดให้ตู้…';await new Promise(r=>setTimeout(r,1500));finish('done','DEMO')};
+
 $('fin').onclick=home;
+
+/* ===== โหมดตู้ ===== */
+const KIOSK=q.get('nokiosk')!=='1';
+const PIN_SALT='pump-v1';
+const PIN_HASH='b29ea329a15a1bb8d6064ee31b5cb4d26964c51a6ab49f360c411d01f0760d99';   // เปลี่ยนรหัส: เปิดหน้าเว็บด้วย ?hash=รหัสใหม่6หลัก แล้วคัดลอกค่าที่ขึ้นมาวางที่นี่
+let locked=true,pin='',fails=0,lockUntil=0,pinT=null;
+const sha=async s=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(PIN_SALT+s)))].map(b=>b.toString(16).padStart(2,'0')).join('');
+if(q.get('hash'))sha(q.get('hash')).then(h=>prompt('คัดลอกค่านี้ไปใส่ PIN_HASH',h));
+['1','2','3','4','5','6','7','8','9','ยกเลิก','0','⌫'].forEach(k=>{const b=document.createElement('button');b.textContent=k;b.onclick=()=>key(k);$('kp').appendChild(b)});
+function dots(){$('dots').innerHTML=Array.from({length:6},(_,i)=>'<i class="'+(i<pin.length?'f':'')+'"></i>').join('')}
+function openPin(){pin='';dots();$('perr').textContent='';$('pin').hidden=false;clearTimeout(pinT);pinT=setTimeout(closePin,30000)}
+function closePin(){$('pin').hidden=true;pin='';clearTimeout(pinT)}
+async function key(k){
+  if(k==='ยกเลิก')return closePin();
+  if(k==='⌫')pin=pin.slice(0,-1);else if(pin.length<6)pin+=k;
+  dots();if(pin.length<6)return;
+  if(Date.now()<lockUntil){$('perr').textContent='ลองใหม่ในอีก '+Math.ceil((lockUntil-Date.now())/1000)+' วินาที';pin='';dots();return}
+  if(await sha(pin)===PIN_HASH)return unlock();
+  fails++;pin='';dots();
+  if(fails>=5){lockUntil=Date.now()+60000;fails=0;$('perr').textContent='ใส่ผิดหลายครั้ง รอ 60 วินาที'}else $('perr').textContent='รหัสไม่ถูกต้อง';
+}
+function unlock(){locked=false;closePin();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});$('free').hidden=false;try{window.close()}catch(_){}}
+function enterFs(){if(KIOSK&&locked&&!document.fullscreenElement)document.documentElement.requestFullscreen({navigationUI:'hide'}).catch(()=>{})}
+$('exit').onclick=openPin;
+$('relock').onclick=()=>{locked=true;$('free').hidden=true;enterFs()};
+if(KIOSK){
+  document.addEventListener('pointerdown',enterFs);
+  history.pushState(null,'',location.href);
+  addEventListener('popstate',()=>{if(locked)history.pushState(null,'',location.href)});
+  addEventListener('beforeunload',e=>{if(locked){e.preventDefault();e.returnValue=''}});
+  document.addEventListener('contextmenu',e=>e.preventDefault());
+  const wl=async()=>{try{if(locked)await navigator.wakeLock.request('screen')}catch(_){}};
+  wl();document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')wl()});
+}
 </script>
 </body>
 </html>
