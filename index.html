@@ -133,7 +133,7 @@ input{-webkit-user-select:text;user-select:text}
 
 <script>
 /* ===== ตั้งค่า ===== */
-const CFG={PROMPTPAY:'0614953337',WORKER_URL:'',MIN:10,MAX:500,QR_SEC:300};
+const CFG={PROMPTPAY:'0614953337',WORKER_URL:'https://pump.kookby11.workers.dev',MIN:10,MAX:500,QR_SEC:300};
 const $=id=>document.getElementById(id);
 const q=new URLSearchParams(location.search);
 const MACHINE=(q.get('m')||'01').slice(0,16);$('mid').textContent=MACHINE;
