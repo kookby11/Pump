@@ -109,12 +109,8 @@ input{-webkit-user-select:text;user-select:text}
    <div id="qr"></div>
    <div class="mut">QR หมดอายุใน <b id="cd">05:00</b></div>
   </div>
-  <ol class="how"><li>เปิดแอปธนาคาร แล้วสแกน QR นี้</li><li>ตรวจยอดและชำระเงิน</li><li>กลับมากด “ชำระแล้ว” และแนบสลิป</li></ol>
- </div>
- <div class="foot">
-  <input type="file" id="slip" accept="image/*" hidden>
-  <button class="btn" id="paid">ชำระแล้ว · แนบสลิป</button>
-  <button class="btn line" id="demo" hidden>โหมดทดสอบ: ข้ามการตรวจสอบ</button>
+  <div class="mut" id="wait" style="text-align:center;font-weight:700">กำลังรอรับเงิน…</div>
+  <button class="btn line" id="demo" hidden>โหมดทดสอบ: จำลองว่าเงินเข้า</button>
  </div>
 </section>
 
@@ -124,7 +120,7 @@ input{-webkit-user-select:text;user-select:text}
 <!-- 4 เสร็จ -->
 <section class="scr" id="s4">
  <div class="body center"><div class="ok">✓</div><h2 id="okt">ชำระเงินสำเร็จ</h2><div class="big"><span id="dn"></span> บาท</div><p class="mut" id="okm"></p><p class="mut" id="code"></p></div>
- <div class="foot"><button class="btn" id="fin">เสร็จสิ้น</button></div>
+ <div class="foot"><button class="btn" id="fin">ตกลง</button></div>
 </section>
 </div>
 <button id="exit" aria-label="ปิดแอป">✕</button>
@@ -134,7 +130,7 @@ input{-webkit-user-select:text;user-select:text}
 
 <script>
 /* ===== ตั้งค่า ===== */
-const CFG={PROMPTPAY:'0614953337',WORKER_URL:'https://pump.kookby11.workers.dev',MIN:10,MAX:500,QR_SEC:300};
+const CFG={PROMPTPAY:'0614953337',WORKER_URL:'https://pump.kookby11.workers.dev',MIN:10,MAX:500,QR_SEC:300,DONE_SEC:8};
 const $=id=>document.getElementById(id);
 const q=new URLSearchParams(location.search);
 const MACHINE=(q.get('m')||'01').slice(0,16);$('mid').textContent=MACHINE;
@@ -143,7 +139,7 @@ const show=n=>{document.querySelectorAll('.scr').forEach((e,i)=>e.classList.togg
 function toast(t){const e=$('toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',3500)}
 function resetIdle(n){clearTimeout(idleT);if(n===1||n===2)idleT=setTimeout(()=>{if(!busy)home()},n===1?90000:CFG.QR_SEC*1000+5000)}
 document.addEventListener('pointerdown',()=>{if($('s1').classList.contains('on'))resetIdle(1)});
-function home(){amount=0;busy=false;$('inp').value='';sel();upd();show(0)}
+function home(){cancelOrder();amount=0;busy=false;$('inp').value='';sel();upd();show(0)}
 
 /* นาฬิกา */
 setInterval(()=>{const d=new Date();$('clk').textContent=d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});$('dt').textContent=d.toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'long'})},1000);
@@ -175,34 +171,54 @@ function crc16(s){let c=0xFFFF;for(const x of s){c^=x.charCodeAt(0)<<8;for(let i
 function ppay(id,a){const t=id.replace(/\D/g,'');const acc=t.length===13?tlv('02',t):tlv('01','0066'+t.slice(1));
   const p=tlv('00','01')+tlv('01','12')+tlv('29',tlv('00','A000000677010111')+acc)+tlv('53','764')+tlv('54',a.toFixed(2))+tlv('58','TH')+'6304';return p+crc16(p)}
 
-$('next').onclick=()=>{
-  $('amt').textContent=amount;$('qr').innerHTML='';
-  new QRCode($('qr'),{text:ppay(CFG.PROMPTPAY,amount),width:230,height:230});
-  $('demo').hidden=!DEMO;show(2);
-  let t=CFG.QR_SEC;clearInterval(cdT);cdT=setInterval(()=>{t--;$('cd').textContent=String(t/60|0).padStart(2,'0')+':'+String(t%60).padStart(2,'0');if(t<=0){clearInterval(cdT);toast('QR หมดอายุ');show(1)}},1000);
-};
+$('next').onclick=startOrder;
 
-/* ส่งสลิป + รอตู้ตอบกลับ */
-$('paid').onclick=()=>CFG.WORKER_URL?$('slip').click():toast('ยังไม่ได้ตั้ง WORKER_URL');
-$('slip').onchange=async e=>{
-  const f=e.target.files[0];e.target.value='';if(!f||busy)return;
-  busy=true;show(3);$('vt').textContent='กำลังตรวจสอบสลิป…';
-  try{const fd=new FormData();fd.append('slip',f);fd.append('amount',amount);fd.append('machine',MACHINE);
-    const r=await api('/pay?m='+encodeURIComponent(MACHINE),{method:'POST',body:fd});
-    if(!r.ok){busy=false;toast(r.msg||'ตรวจสลิปไม่ผ่าน');show(2);return}
-    $('vt').textContent='ชำระเงินสำเร็จ กำลังส่งยอดให้ตู้…';
-    let st='pending';
-    for(let i=0;i<30&&st!=='done';i++){await new Promise(r=>setTimeout(r,1500));try{st=(await api('/status?m='+encodeURIComponent(MACHINE)+'&id='+r.id)).state}catch(_){}}
-    finish(st,r.id);
-  }catch(_){busy=false;toast('ตรวจสอบไม่สำเร็จ ลองใหม่');show(2)}
-};
+/* สร้างรายการ + รอเงินเข้าอัตโนมัติ */
+let orderId=null,ordering=false;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const qs=p=>p+'?m='+encodeURIComponent(MACHINE);
+async function startOrder(){
+  if(ordering||!amount)return;ordering=true;let total=amount;
+  try{
+    if(DEMO){orderId='DEMO';total=amount}
+    else{const r=await api(qs('/order'),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({amount})});
+      if(!r.ok){toast(r.msg||'สร้างรายการไม่สำเร็จ');ordering=false;return}
+      orderId=r.id;total=r.total}
+  }catch(_){toast('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');ordering=false;return}
+  ordering=false;
+  $('amt').textContent=total;$('qr').innerHTML='';
+  new QRCode($('qr'),{text:ppay(CFG.PROMPTPAY,total),width:230,height:230});
+  $('wait').textContent='กำลังรอรับเงิน…';$('demo').hidden=!DEMO;show(2);countdown();
+  if(!DEMO)watch();
+}
+function countdown(){
+  let t=CFG.QR_SEC;clearInterval(cdT);$('cd').textContent='05:00';
+  cdT=setInterval(()=>{t--;$('cd').textContent=String(t/60|0).padStart(2,'0')+':'+String(t%60).padStart(2,'0');
+    if(t<=0){clearInterval(cdT);orderId=null;toast('QR หมดอายุ');show(1)}},1000);
+}
+async function watch(){
+  const me=orderId;let st='awaiting';
+  while(orderId===me&&st==='awaiting'&&$('s2').classList.contains('on')){
+    await sleep(2000);
+    try{st=(await api(qs('/status')+'&id='+me)).state}catch(_){}
+  }
+  if(orderId!==me||!$('s2').classList.contains('on'))return;
+  if(st==='expired'){orderId=null;toast('QR หมดอายุ');show(1);return}
+  if(st==='awaiting')return;
+  $('dn').textContent=amount;$('code').textContent='รหัสรายการ '+me;
+  $('okt').textContent='ชำระสำเร็จ';$('okm').textContent='ได้รับเงินแล้ว กำลังส่งยอดให้ตู้…';show(4);
+  for(let i=0;i<30&&st!=='done';i++){await sleep(1500);try{st=(await api(qs('/status')+'&id='+me)).state}catch(_){}}
+  finish(st,me);
+}
 function finish(st,id){
   const ok=st==='done';$('dn').textContent=amount;$('code').textContent='รหัสรายการ '+id;
-  $('okt').textContent=ok?'ชำระเงินสำเร็จ':'รับยอดแล้ว แต่ตู้ยังไม่ตอบกลับ';
-  $('okm').textContent=ok?'ส่งยอดให้ตู้แล้ว ยกหัวจ่ายแล้วเติมน้ำมันได้เลย':'ถ้ายังไม่มียอดที่ตู้ แจ้งเจ้าหน้าที่พร้อมรหัสรายการนี้ ห้ามจ่ายซ้ำ';
-  show(4);setTimeout(()=>{if($('s4').classList.contains('on'))home()},ok?20000:120000);
+  $('okt').textContent='ชำระสำเร็จ';
+  $('okm').textContent=ok?'ส่งยอดให้ตู้แล้ว ยกหัวจ่ายเติมน้ำมันได้เลย':'ได้รับเงินแล้ว แต่ตู้ยังไม่ตอบกลับ ถ้ายังไม่มียอดที่ตู้ แจ้งเจ้าหน้าที่พร้อมรหัสรายการนี้ ห้ามจ่ายซ้ำ';
+  show(4);setTimeout(()=>{if($('s4').classList.contains('on'))home()},ok?CFG.DONE_SEC*1000:120000);
 }
-$('demo').onclick=async()=>{if(busy)return;busy=true;show(3);$('vt').textContent='กำลังส่งยอดให้ตู้…';await new Promise(r=>setTimeout(r,1500));finish('done','DEMO')};
+function cancelOrder(){if(orderId&&!DEMO)api(qs('/cancel')+'&id='+orderId,{method:'POST'}).catch(()=>{});orderId=null}
+document.querySelector('#s2 .back').addEventListener('click',cancelOrder);
+$('demo').onclick=async()=>{orderId=null;$('dn').textContent=amount;$('okt').textContent='ชำระสำเร็จ';$('okm').textContent='ได้รับเงินแล้ว กำลังส่งยอดให้ตู้…';$('code').textContent='';show(4);await sleep(1500);finish('done','DEMO')};
 
 $('fin').onclick=home;
 
