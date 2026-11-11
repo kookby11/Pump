@@ -68,6 +68,8 @@ input{-webkit-user-select:text;user-select:text}
 .kp{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.kp button{border:0;background:var(--bg);border-radius:14px;padding:14px 0;font:800 1.3rem 'Sarabun';color:var(--navy)}
 #perr{color:var(--red);min-height:1.2em;font-size:.9rem}
 #ble{display:none!important}
+#dot{position:fixed;top:calc(env(safe-area-inset-top) + 18px);right:50px;z-index:50;width:10px;height:10px;border-radius:50%;background:#E5483B;box-shadow:0 0 0 2px rgba(255,255,255,.75);transition:background .3s}
+#dot.on{background:#2BC16B}
 </style>
 </head>
 <body>
@@ -123,6 +125,7 @@ input{-webkit-user-select:text;user-select:text}
  <div class="foot"><button class="btn" id="fin">ตกลง</button></div>
 </section>
 </div>
+<span id="dot" title="สถานะตู้"></span>
 <button id="exit" aria-label="ปิดแอป">✕</button>
 <div id="pin" hidden><div class="pbox"><b>ใส่รหัสเพื่อปิดแอป</b><div id="dots"></div><div id="perr"></div><div class="kp" id="kp"></div></div></div>
 <div id="free" hidden><div class="pbox"><b>ปลดล็อกแล้ว</b><p class="mut">ปิดแอปได้เลย (ปัดปิดจากหน้ารวมแอป หรือกดปุ่มโฮม)</p><button class="btn" id="relock">กลับเข้าโหมดตู้</button></div></div>
@@ -148,8 +151,8 @@ setInterval(()=>{const d=new Date();$('clk').textContent=d.toLocaleTimeString('t
 const DEMO=q.get('demo')==='1';
 const api=(p,o)=>fetch(CFG.WORKER_URL+p,o).then(r=>r.json());
 async function online(){if(DEMO)return true;try{return !!(await api('/online?m='+encodeURIComponent(MACHINE))).online}catch(_){return false}}
-function setChip(on){$('ble').classList.toggle('ok',on);$('ble').querySelector('span').innerHTML='ตู้ <b>'+MACHINE+'</b> · '+(on?'พร้อมใช้งาน':'ไม่พร้อมใช้งาน')}
-if(DEMO)setChip(true);else if(CFG.WORKER_URL){online().then(setChip);setInterval(()=>online().then(setChip),30000)}else setChip(false);
+function setChip(on){$('dot').classList.toggle('on',on);$('ble').classList.toggle('ok',on);$('ble').querySelector('span').innerHTML='ตู้ <b>'+MACHINE+'</b> · '+(on?'พร้อมใช้งาน':'ไม่พร้อมใช้งาน')}
+if(DEMO)setChip(true);else if(CFG.WORKER_URL){online().then(setChip);setInterval(()=>online().then(setChip),15000)}else setChip(false);
 $('go').onclick=async()=>{if(await online())show(1);else{setChip(false);toast('ตู้ยังไม่พร้อมใช้งาน กรุณาแจ้งเจ้าหน้าที่')}};
 
 /* เลือกยอด */
